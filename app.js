@@ -61,6 +61,37 @@ function normalizeFacetOrderBy(value) {
   return FACET_ORDER_BY_OPTIONS.includes(value) ? value : "name";
 }
 
+function normalizeFacetFilterValues(facet) {
+  const filterValues = Array.isArray(facet?.filterValues) ? facet.filterValues : null;
+  if (filterValues && filterValues.length) {
+    return filterValues;
+  }
+
+  const values = Array.isArray(facet?.values) ? facet.values : null;
+  if (!values || !values.length) {
+    return [];
+  }
+
+  return values
+    .map((value) => {
+      if (value == null) {
+        return "";
+      }
+      if (typeof value === "string") {
+        return value.trim();
+      }
+      if (typeof value === "number" || typeof value === "boolean") {
+        return String(value);
+      }
+      if (typeof value === "object") {
+        const candidate = value.value ?? value.name ?? value.key ?? value.label;
+        return candidate == null ? "" : String(candidate).trim();
+      }
+      return "";
+    })
+    .filter(Boolean);
+}
+
 function extractFacets(searchRequest) {
   const facets = searchRequest?.facets;
   if (Array.isArray(facets)) {
@@ -79,7 +110,7 @@ function mapFacetToDraft(facet) {
   return {
     name: normalizeFacetName(facet.name),
     responseNames: facet.responseNames,
-    filterValues: facet.filterValues || [],
+    filterValues: normalizeFacetFilterValues(facet),
     additionalType: facet.additionalType || [],
     orderBy: normalizeFacetOrderBy(facet.orderBy),
     orderDirection: facet.orderDirection,
