@@ -45,6 +45,7 @@ const FACET_NAME_OPTIONS = [
 ];
 
 const FACET_ORDER_BY_OPTIONS = ["name", "count", "value"];
+const FACET_VALUE_FIELD_OPTIONS = ["selectValues", "filterValues", "values", "interval"];
 
 function normalizeFacetName(value) {
   if (typeof value !== "string") {
@@ -61,14 +62,17 @@ function normalizeFacetOrderBy(value) {
   return FACET_ORDER_BY_OPTIONS.includes(value) ? value : "name";
 }
 
-function normalizeFacetFilterValues(facet) {
-  const filterValues = Array.isArray(facet?.filterValues) ? facet.filterValues : null;
-  if (filterValues && filterValues.length) {
-    return filterValues;
+function normalizeFacetValueList(values) {
+  if (typeof values === "string") {
+    const trimmed = values.trim();
+    return trimmed ? [trimmed] : [];
   }
 
-  const values = Array.isArray(facet?.values) ? facet.values : null;
-  if (!values || !values.length) {
+  if (typeof values === "number" || typeof values === "boolean") {
+    return [String(values)];
+  }
+
+  if (!Array.isArray(values) || !values.length) {
     return [];
   }
 
@@ -92,6 +96,100 @@ function normalizeFacetFilterValues(facet) {
     .filter(Boolean);
 }
 
+function normalizeFacetFilterValues(facet) {
+  return normalizeFacetValueList(facet?.filterValues);
+}
+
+function normalizeFacetSelectValues(facet) {
+  return normalizeFacetValueList(facet?.selectValues);
+}
+
+function normalizeFacetInterval(interval) {
+  if (interval == null) {
+    return undefined;
+  }
+  if (Array.isArray(interval)) {
+    return [...interval];
+  }
+  if (typeof interval === "object") {
+    return { ...interval };
+  }
+  if (typeof interval === "string") {
+    const trimmed = interval.trim();
+    return trimmed ? trimmed : undefined;
+  }
+  return interval;
+}
+
+function getFacetActiveValueField(facet) {
+  if (Array.isArray(facet?.selectValues) && facet.selectValues.length > 0) {
+    return "selectValues";
+  }
+  if (Array.isArray(facet?.filterValues) && facet.filterValues.length > 0) {
+    return "filterValues";
+  }
+  if (Array.isArray(facet?.values) && facet.values.length > 0) {
+    return "values";
+  }
+
+  const hasInterval =
+    facet?.interval != null &&
+    !(typeof facet.interval === "string" && !facet.interval.trim());
+  if (hasInterval) {
+    return "interval";
+  }
+
+  if (FACET_VALUE_FIELD_OPTIONS.includes(facet?.valueField)) {
+    return facet.valueField;
+  }
+  return "filterValues";
+}
+
+function getFacetValueFieldLabel(field) {
+  if (field === "selectValues") return "Select values (one per line)";
+  if (field === "filterValues") return "Filter values (one per line)";
+  if (field === "values") return "Values (one per line)";
+  if (field === "interval") return "Interval (JSON)";
+  return "Values";
+}
+
+function getFacetValueTextareaContent(facet, field) {
+  if (field === "selectValues") {
+    return (facet.selectValues || []).join("\n");
+  }
+  if (field === "filterValues") {
+    return (facet.filterValues || []).join("\n");
+  }
+  if (field === "values") {
+    return (facet.values || []).join("\n");
+  }
+  if (field === "interval") {
+    if (facet.interval == null) {
+      return "";
+    }
+    if (typeof facet.interval === "string") {
+      return facet.interval;
+    }
+    return JSON.stringify(facet.interval, null, 2);
+  }
+  return "";
+}
+
+function clearFacetValueFieldsExcept(facet, activeField) {
+  if (activeField !== "selectValues") {
+    facet.selectValues = [];
+  }
+  if (activeField !== "filterValues") {
+    facet.filterValues = [];
+  }
+  if (activeField !== "values") {
+    facet.values = [];
+  }
+  if (activeField !== "interval") {
+    facet.interval = undefined;
+  }
+}
+
 function extractFacets(searchRequest) {
   const facets = searchRequest?.facets;
   if (Array.isArray(facets)) {
@@ -107,10 +205,13 @@ function mapFacetToDraft(facet) {
   if (!facet || typeof facet !== "object") {
     return null;
   }
-  return {
+  const draftFacet = {
     name: normalizeFacetName(facet.name),
     responseNames: facet.responseNames,
     filterValues: normalizeFacetFilterValues(facet),
+    selectValues: normalizeFacetSelectValues(facet),
+    values: normalizeFacetValueList(facet.values),
+    interval: normalizeFacetInterval(facet.interval),
     additionalType: facet.additionalType || [],
     orderBy: normalizeFacetOrderBy(facet.orderBy),
     orderDirection: facet.orderDirection,
@@ -118,6 +219,9 @@ function mapFacetToDraft(facet) {
     scope: facet.scope || "current",
     excludeRedundant: facet.excludeRedundant || false,
   };
+  draftFacet.valueField = getFacetActiveValueField(draftFacet);
+  clearFacetValueFieldsExcept(draftFacet, draftFacet.valueField);
+  return draftFacet;
 }
 
 const state = {
@@ -1219,20 +1323,27 @@ function cloneFilter(filter) {
 }
 
 function cloneFacet(facet) {
-  return {
+  const cloned = {
     name: normalizeFacetName(facet?.name),
     responseNames: {
       de: facet?.responseNames?.de || "",
       en: facet?.responseNames?.en || "",
     },
     filterValues: Array.isArray(facet?.filterValues) ? [...facet.filterValues] : [],
+    selectValues: Array.isArray(facet?.selectValues) ? [...facet.selectValues] : [],
+    values: Array.isArray(facet?.values) ? [...facet.values] : [],
+    interval: facet?.interval && typeof facet.interval === "object" ? { ...facet.interval } : facet?.interval,
     additionalType: Array.isArray(facet?.additionalType) ? [...facet.additionalType] : [],
     orderBy: normalizeFacetOrderBy(facet?.orderBy),
     orderDirection: facet?.orderDirection || "",
     count: facet?.count,
     scope: facet?.scope || "current",
     excludeRedundant: !!facet?.excludeRedundant,
+    valueField: facet?.valueField,
   };
+  cloned.valueField = getFacetActiveValueField(cloned);
+  clearFacetValueFieldsExcept(cloned, cloned.valueField);
+  return cloned;
 }
 
 function canInsertCopiedFilter() {
@@ -1454,6 +1565,7 @@ function renderFacets() {
   }
 
   state.draft.facets.forEach((facet, index) => {
+    facet.valueField = getFacetActiveValueField(facet);
     const card = document.createElement("details");
     card.className = "facet-card";
     const responseNameDe = String(facet.responseNames?.de || "").trim();
@@ -1471,6 +1583,9 @@ function renderFacets() {
           `<option value="${escapeHtml(name)}" ${facetName === name ? "selected" : ""}>${escapeHtml(name)}</option>`
       )
       .join("");
+    const activeValueField = facet.valueField;
+    const valueFieldLabel = getFacetValueFieldLabel(activeValueField);
+    const valueTextareaContent = getFacetValueTextareaContent(facet, activeValueField);
     card.innerHTML = `
       <summary class="card-summary">
         <strong>${headerTitle}</strong>
@@ -1506,8 +1621,17 @@ function renderFacets() {
           <input data-field="responseNames.en" value="${facet.responseNames?.en || ""}" />
         </label>
         <label>
-          <span>Filter values (one per line)</span>
-          <textarea rows="3" data-field="filterValues">${(facet.filterValues || []).join("\n")}</textarea>
+          <span>Value field</span>
+          <select data-field="valueField">
+            <option value="selectValues" ${activeValueField === "selectValues" ? "selected" : ""}>selectValues</option>
+            <option value="filterValues" ${activeValueField === "filterValues" ? "selected" : ""}>filterValues</option>
+            <option value="values" ${activeValueField === "values" ? "selected" : ""}>values</option>
+            <option value="interval" ${activeValueField === "interval" ? "selected" : ""}>interval</option>
+          </select>
+        </label>
+        <label class="full">
+          <span>${valueFieldLabel}</span>
+          <textarea rows="3" data-field="activeValueText">${valueTextareaContent}</textarea>
         </label>
         <label>
           <span>Additional type (comma separated)</span>
@@ -1583,8 +1707,35 @@ function updateFacetField(index, field, value) {
 
   if (field === "name") {
     facet.name = normalizeFacetName(value);
-  } else if (field === "filterValues") {
-    facet.filterValues = value.split("\n").map((v) => v.trim()).filter(Boolean);
+  } else if (field === "valueField") {
+    facet.valueField = FACET_VALUE_FIELD_OPTIONS.includes(value) ? value : "filterValues";
+    clearFacetValueFieldsExcept(facet, facet.valueField);
+    renderFacets();
+    updateRequestJson();
+    return;
+  } else if (field === "activeValueText") {
+    facet.valueField = getFacetActiveValueField(facet);
+    const activeField = facet.valueField;
+    clearFacetValueFieldsExcept(facet, activeField);
+
+    if (activeField === "interval") {
+      const trimmed = String(value || "").trim();
+      if (!trimmed) {
+        facet.interval = undefined;
+      } else {
+        try {
+          facet.interval = JSON.parse(trimmed);
+        } catch (error) {
+          facet.interval = trimmed;
+        }
+      }
+    } else {
+      const parsedValues = String(value || "")
+        .split("\n")
+        .map((v) => v.trim())
+        .filter(Boolean);
+      facet[activeField] = parsedValues;
+    }
   } else if (field === "additionalType") {
     facet.additionalType = value.split(",").map((v) => v.trim()).filter(Boolean);
   } else if (field === "count") {
@@ -1621,10 +1772,15 @@ function buildRequestBody() {
 
   searchRequest.facets = state.draft.facets
     .map((facet) => {
+      const activeValueField = getFacetActiveValueField(facet);
+      clearFacetValueFieldsExcept(facet, activeValueField);
       const mapped = {
         name: normalizeFacetName(facet.name),
         responseNames: facet.responseNames || undefined,
-        filterValues: facet.filterValues?.length ? facet.filterValues : undefined,
+        filterValues: activeValueField === "filterValues" && facet.filterValues?.length ? facet.filterValues : undefined,
+        selectValues: activeValueField === "selectValues" && facet.selectValues?.length ? facet.selectValues : undefined,
+        values: activeValueField === "values" && facet.values?.length ? facet.values : undefined,
+        interval: activeValueField === "interval" ? facet.interval : undefined,
         additionalType: facet.additionalType?.length ? facet.additionalType : undefined,
         orderBy: normalizeFacetOrderBy(facet.orderBy),
         orderDirection: facet.orderDirection || undefined,
@@ -2045,6 +2201,10 @@ function wireEvents() {
       name: FACET_NAME_OPTIONS[0],
       responseNames: { de: "", en: "" },
       filterValues: [],
+      selectValues: [],
+      values: [],
+      interval: undefined,
+      valueField: "filterValues",
       additionalType: [],
       orderBy: "name",
       orderDirection: "",
