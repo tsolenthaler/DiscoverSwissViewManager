@@ -122,6 +122,9 @@ function normalizeFacetInterval(interval) {
 }
 
 function getFacetActiveValueField(facet) {
+  if (FACET_VALUE_FIELD_OPTIONS.includes(facet?.valueField)) {
+    return facet.valueField;
+  }
   if (Array.isArray(facet?.selectValues) && facet.selectValues.length > 0) {
     return "selectValues";
   }
@@ -137,10 +140,6 @@ function getFacetActiveValueField(facet) {
     !(typeof facet.interval === "string" && !facet.interval.trim());
   if (hasInterval) {
     return "interval";
-  }
-
-  if (FACET_VALUE_FIELD_OPTIONS.includes(facet?.valueField)) {
-    return facet.valueField;
   }
   return "filterValues";
 }
@@ -173,6 +172,54 @@ function getFacetValueTextareaContent(facet, field) {
     return JSON.stringify(facet.interval, null, 2);
   }
   return "";
+}
+
+function facetFieldToTextLines(facet, field) {
+  if (field === "interval") {
+    if (facet.interval == null) {
+      return [];
+    }
+    if (typeof facet.interval === "string") {
+      return facet.interval
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    }
+    if (Array.isArray(facet.interval)) {
+      return facet.interval
+        .map((entry) => (entry == null ? "" : String(entry).trim()))
+        .filter(Boolean);
+    }
+    return [JSON.stringify(facet.interval)];
+  }
+
+  const values = Array.isArray(facet[field]) ? facet[field] : [];
+  return values
+    .map((entry) => (entry == null ? "" : String(entry).trim()))
+    .filter(Boolean);
+}
+
+function assignFacetFieldFromTextLines(facet, field, lines) {
+  const normalizedLines = Array.isArray(lines)
+    ? lines.map((line) => String(line || "").trim()).filter(Boolean)
+    : [];
+
+  if (field === "interval") {
+    if (!normalizedLines.length) {
+      facet.interval = undefined;
+      return;
+    }
+
+    const text = normalizedLines.join("\n");
+    try {
+      facet.interval = JSON.parse(text);
+    } catch (error) {
+      facet.interval = text;
+    }
+    return;
+  }
+
+  facet[field] = normalizedLines;
 }
 
 function clearFacetValueFieldsExcept(facet, activeField) {
@@ -220,7 +267,6 @@ function mapFacetToDraft(facet) {
     excludeRedundant: facet.excludeRedundant || false,
   };
   draftFacet.valueField = getFacetActiveValueField(draftFacet);
-  clearFacetValueFieldsExcept(draftFacet, draftFacet.valueField);
   return draftFacet;
 }
 
@@ -1342,7 +1388,6 @@ function cloneFacet(facet) {
     valueField: facet?.valueField,
   };
   cloned.valueField = getFacetActiveValueField(cloned);
-  clearFacetValueFieldsExcept(cloned, cloned.valueField);
   return cloned;
 }
 
@@ -1708,34 +1753,27 @@ function updateFacetField(index, field, value) {
   if (field === "name") {
     facet.name = normalizeFacetName(value);
   } else if (field === "valueField") {
-    facet.valueField = FACET_VALUE_FIELD_OPTIONS.includes(value) ? value : "filterValues";
-    clearFacetValueFieldsExcept(facet, facet.valueField);
+    const previousField = getFacetActiveValueField(facet);
+    const nextField = FACET_VALUE_FIELD_OPTIONS.includes(value) ? value : "filterValues";
+
+    if (previousField !== nextField) {
+      const previousLines = facetFieldToTextLines(facet, previousField);
+      assignFacetFieldFromTextLines(facet, nextField, previousLines);
+    }
+
+    facet.valueField = nextField;
     renderFacets();
     updateRequestJson();
     return;
   } else if (field === "activeValueText") {
     facet.valueField = getFacetActiveValueField(facet);
     const activeField = facet.valueField;
-    clearFacetValueFieldsExcept(facet, activeField);
+    const parsedLines = String(value || "")
+      .split("\n")
+      .map((v) => v.trim())
+      .filter(Boolean);
 
-    if (activeField === "interval") {
-      const trimmed = String(value || "").trim();
-      if (!trimmed) {
-        facet.interval = undefined;
-      } else {
-        try {
-          facet.interval = JSON.parse(trimmed);
-        } catch (error) {
-          facet.interval = trimmed;
-        }
-      }
-    } else {
-      const parsedValues = String(value || "")
-        .split("\n")
-        .map((v) => v.trim())
-        .filter(Boolean);
-      facet[activeField] = parsedValues;
-    }
+    assignFacetFieldFromTextLines(facet, activeField, parsedLines);
   } else if (field === "additionalType") {
     facet.additionalType = value.split(",").map((v) => v.trim()).filter(Boolean);
   } else if (field === "count") {
@@ -1773,7 +1811,6 @@ function buildRequestBody() {
   searchRequest.facets = state.draft.facets
     .map((facet) => {
       const activeValueField = getFacetActiveValueField(facet);
-      clearFacetValueFieldsExcept(facet, activeValueField);
       const mapped = {
         name: normalizeFacetName(facet.name),
         responseNames: facet.responseNames || undefined,
