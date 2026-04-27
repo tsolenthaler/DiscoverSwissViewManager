@@ -64,6 +64,25 @@ function normalizeFacetOrderBy(value) {
   return FACET_ORDER_BY_OPTIONS.includes(value) ? value : "name";
 }
 
+function normalizeSearchOrderBy(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => String(entry || "").trim())
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (value == null) {
+    return "";
+  }
+
+  return String(value).trim();
+}
+
 function normalizeFacetValueList(values) {
   if (typeof values === "string") {
     const trimmed = values.trim();
@@ -283,6 +302,7 @@ const state = {
   draft: {
     name: "",
     description: "",
+    orderBy: "",
     scheduleStrategy: "Daily",
     filters: [],
     facets: [],
@@ -304,6 +324,7 @@ const elements = {
   deleteViewBtn: document.getElementById("deleteViewBtn"),
   draftName: document.getElementById("draftName"),
   draftDescription: document.getElementById("draftDescription"),
+  draftOrderBy: document.getElementById("draftOrderBy"),
   addFilterBtn: document.getElementById("addFilterBtn"),
   addCopiedFilterBtn: document.getElementById("addCopiedFilterBtn"),
   filterList: document.getElementById("filterList"),
@@ -1474,6 +1495,9 @@ function updateEditorViewTitle() {
 function renderDraft() {
   elements.draftName.value = state.draft.name;
   elements.draftDescription.value = state.draft.description;
+  if (elements.draftOrderBy) {
+    elements.draftOrderBy.value = state.draft.orderBy || "";
+  }
   updateCopiedInsertButtonsVisibility();
   renderFilters();
   renderFacets();
@@ -1803,6 +1827,11 @@ function buildRequestBody() {
     project: [state.settings.project],
   };
 
+  const normalizedOrderBy = normalizeSearchOrderBy(state.draft.orderBy);
+  if (normalizedOrderBy) {
+    searchRequest.orderBy = normalizedOrderBy;
+  }
+
   state.draft.filters.forEach((filter) => {
     if (!filter.type || !SEARCH_REQUEST_FILTER_KEYS.includes(filter.type)) {
       return;
@@ -2017,6 +2046,7 @@ async function loadSelectedView() {
 function applyViewToDraft(view) {
   state.draft.name = view.name || "";
   state.draft.description = view.description || "";
+  state.draft.orderBy = normalizeSearchOrderBy(view.searchRequest?.orderBy);
   state.draft.scheduleStrategy = view.scheduleStrategy || "Daily";
   
   // Reset filters
@@ -2229,6 +2259,13 @@ function wireEvents() {
     updateRequestJson();
   });
 
+  if (elements.draftOrderBy) {
+    elements.draftOrderBy.addEventListener("input", () => {
+      state.draft.orderBy = normalizeSearchOrderBy(elements.draftOrderBy.value);
+      updateRequestJson();
+    });
+  }
+
   elements.addFilterBtn.addEventListener("click", () => {
     state.draft.filters.push({
       type: "combinedTypeTree",
@@ -2325,6 +2362,7 @@ function init() {
       const json = JSON.parse(chatbotDraft);
       state.draft.name = json.name || state.draft.name;
       state.draft.description = json.description || state.draft.description;
+      state.draft.orderBy = normalizeSearchOrderBy(json.searchRequest?.orderBy);
       state.draft.scheduleStrategy = json.scheduleStrategy || state.draft.scheduleStrategy;
       
       const searchRequest = json.searchRequest || {};
