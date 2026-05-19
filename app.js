@@ -14,6 +14,7 @@ const SEARCH_REQUEST_FILTER_KEYS = [
   "combinedTypeTree",
   "categoryTree",
   "filters",
+  "leafType",
   "location",
   "award",
   "datasource",
@@ -1581,6 +1582,7 @@ function renderFilters() {
             <option value="combinedTypeTree" ${filter.type === "combinedTypeTree" ? "selected" : ""}>combinedTypeTree</option>
             <option value="categoryTree" ${filter.type === "categoryTree" ? "selected" : ""}>categoryTree</option>
             <option value="filters" ${filter.type === "filters" ? "selected" : ""}>filters</option>
+            <option value="leafType" ${filter.type === "leafType" ? "selected" : ""}>leafType</option>
             <option value="location" ${filter.type === "location" ? "selected" : ""}>location</option>
             <option value="award" ${filter.type === "award" ? "selected" : ""}>award</option>
             <option value="datasource" ${filter.type === "datasource" ? "selected" : ""}>datasource</option>
