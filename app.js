@@ -159,6 +159,22 @@ function normalizeFacetInterval(interval) {
   return interval;
 }
 
+function normalizeResponseNames(responseNames) {
+  if (!responseNames || typeof responseNames !== "object") {
+    return undefined;
+  }
+
+  const normalized = Object.entries(responseNames).reduce((acc, [language, name]) => {
+    const normalizedName = String(name ?? "").trim();
+    if (normalizedName) {
+      acc[language] = normalizedName;
+    }
+    return acc;
+  }, {});
+
+  return Object.keys(normalized).length ? normalized : undefined;
+}
+
 function getFacetActiveValueField(facet) {
   if (FACET_VALUE_FIELD_OPTIONS.includes(facet?.valueField)) {
     return facet.valueField;
@@ -292,7 +308,7 @@ function mapFacetToDraft(facet) {
   }
   const draftFacet = {
     name: normalizeFacetName(facet.name),
-    responseNames: facet.responseNames,
+    responseNames: normalizeResponseNames(facet.responseNames),
     filterValues: normalizeFacetFilterValues(facet),
     selectValues: normalizeFacetSelectValues(facet),
     values: normalizeFacetValueList(facet.values),
@@ -1873,9 +1889,10 @@ function buildRequestBody() {
   searchRequest.facets = state.draft.facets
     .map((facet) => {
       const activeValueField = getFacetActiveValueField(facet);
+      const responseNames = normalizeResponseNames(facet.responseNames);
       const mapped = {
         name: normalizeFacetName(facet.name),
-        responseNames: facet.responseNames || undefined,
+        responseNames,
         filterValues: activeValueField === "filterValues" && facet.filterValues?.length ? facet.filterValues : undefined,
         selectValues: activeValueField === "selectValues" && facet.selectValues?.length ? facet.selectValues : undefined,
         values: activeValueField === "values" && facet.values?.length ? facet.values : undefined,
